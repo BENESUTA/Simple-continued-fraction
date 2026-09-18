@@ -195,6 +195,33 @@ function formatSequence(a) {
   return "(" + a.join(", ") + ")";
 }
 
+// 連分数を上から順に打ち切ったときの分数（収束分数）を求める。
+// [a0], [a0;a1], [a0;a1,a2], ... を順番に返す。
+function convergents(a) {
+  const result = [];
+  let pMinus2 = 0n, pMinus1 = 1n;
+  let qMinus2 = 1n, qMinus1 = 0n;
+
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i] * pMinus1 + pMinus2;
+    const q = a[i] * qMinus1 + qMinus2;
+
+    result.push({
+      index: i,
+      terms: a.slice(0, i + 1),
+      numerator: p,
+      denominator: q
+    });
+
+    pMinus2 = pMinus1;
+    pMinus1 = p;
+    qMinus2 = qMinus1;
+    qMinus1 = q;
+  }
+
+  return result;
+}
+
 // 連分数の各段階を表にする
 function makeSteps(p, q) {
   const rows = [];
@@ -251,6 +278,32 @@ function calculate() {
 
         <h3>数列表示</h3>
         <div class="result">${escapeHtml(formatSequence(a))}</div>
+
+        <h3>上から順に展開した分数（収束分数）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>段階</th>
+              <th>連分数</th>
+              <th>分数</th>
+              <th>小数値</th>
+            </tr>
+          </thead>
+          <tbody>
+    ${convergents(a).map(c => `
+            <tr>
+              <td>${c.index}</td>
+              <td class="mono">${escapeHtml(formatCF(c.terms))}</td>
+              <td class="mono">${c.numerator.toString()} / ${c.denominator.toString()}</td>
+              <td>${escapeHtml(
+                c.denominator === 1n
+                  ? c.numerator.toString()
+                  : (Number(c.numerator) / Number(c.denominator)).toPrecision(12)
+              )}</td>
+            </tr>
+    `).join("")}
+          </tbody>
+        </table>
       </div>
 
       <div class="card">
