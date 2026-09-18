@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>有限小数 → 正則連分数展開</title>
+<style>
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+    line-height: 1.6;
+    background: #f7f7f7;
+    color: #222;
+  }
+  .card {
+    background: white;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    margin-bottom: 18px;
+  }
+  input {
+    width: min(100%, 520px);
+    box-sizing: border-box;
+    font-size: 18px;
+    padding: 10px 12px;
+    border: 1px solid #aaa;
+    border-radius: 7px;
+  }
+  button {
+    font-size: 16px;
+    padding: 10px 18px;
+    margin-left: 8px;
+    border: 0;
+    border-radius: 7px;
+    cursor: pointer;
+    background: #333;
+    color: white;
+  }
+  button:hover { opacity: .85; }
+  .result {
+    font-family: "Times New Roman", serif;
+    font-size: 24px;
+    overflow-wrap: anywhere;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .error { color: #b00020; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 12px;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 7px 10px;
+    text-align: right;
+  }
+  th { background: #eee; }
+  .hint { color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>有限小数 → 正則連分数展開</h1>
+
+<div class="card">
+  <p>有限小数を入力してください。</p>
+  <input id="input" type="text" value="3.1415926"
+         placeholder="例: 3.1415926, -0.75, 22/7">
+  <button id="calc">計算</button>
+  <p class="hint">
+    小数点以下の桁数をそのまま整数として扱うため、浮動小数点誤差を避けて計算します。
+    符号付き小数にも対応しています。
+  </p>
+</div>
+
+<div id="output"></div>
+
+<script>
+"use strict";
+
+/*
+ * 有限小数を「整数 / 10^桁数」という有理数に変換し、
+ * ユークリッドの互除法で正則連分数
+ *
+ * x = [a0; a1, a2, ...]
+ *
+ * を求める。
+ *
+ * 正則連分数の標準形では、最後の係数が 1 になる場合、
+ *   [..., a, 1] = [..., a+1]
+ * として最後の 1 を取り除く。
+ */
+
+// BigInt の最大安全桁数を超える入力も計算できるよう、
+// 入力値自体は BigInt で保持する。
+function parseFiniteDecimal(str) {
+  str = str.trim();
+
+  if (!str) throw new Error("数値を入力してください。");
+
+  // 科学表記は「有限小数」という入力条件を明確にするため禁止
+  if (/[eE]/.test(str)) {
+    throw new Error("科学表記（例: 1.23e-4）ではなく、通常の有限小数を入力してください。");
+  }
+
+  const m = str.match(/^([+-]?)(\\d+)(?:\\.(\\d*))?$/);
+  if (!m) {
+    throw new Error("有限小数として認識できません。例: 3.1415");
+  }
+
+  const sign = m[1] === "-" ? -1n : 1n;
+  const intPart = m[2];
+  const fracPart = m[3] ?? "";
+
+  const digits = intPart + fracPart;
+  let numerator = BigInt(digits || "0");
+  const denominator = 10n ** BigInt(fracPart.length);
+
+  numerator *= sign;
+
+  // 約分
+  const g = gcd(abs(numerator), denominator);
+  numerator /= g;
+  const reducedDenominator = denominator / g;
+
+  return {
+    numerator,
+    denominator: reducedDenominator,
+    original: str
+  };
+}
+
+function abs(n) {
+  return n < 0n ? -n : n;
+}
+
+function gcd(a, b) {
+  while (b !== 0n) {
+    const t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
+// 有理数 p/q の正則連分数係数を求める。
+// q > 0 とする。
+function continuedFraction(p, q) {
+  if (q <= 0n) throw new Error("分母は正である必要があります。");
+
+  const coefficients = [];
+
+  while (q !== 0n) {
+    // BigInt の / は 0 方向へ切り捨てるので、
+    // 負数の場合は数学的な floor を明示的に計算する。
+    let a = p / q;
+    let r = p % q;
+
+    if (r < 0n) {
+      a -= 1n;
+      r += q;
+    }
+
+    coefficients.push(a);
+    p = q;
+    q = r;
+  }
+
+  // 標準形:
+  // 最後の係数が 1 なら、最後の2項 [.., a, 1] を [.., a+1] に統合。
+  if (coefficients.length >= 2 &&
+      coefficients[coefficients.length - 1] === 1n) {
+    const n = coefficients.length;
+    coefficients[n - 2] += 1n;
+    coefficients.pop();
+  }
+
+  return coefficients;
+}
+
+function formatCF(a) {
+  if (a.length === 0) return "[]";
+  if (a.length === 1) return `[${a[0]}]`;
+  return `[${a[0]}; ${a.slice(1).join(", ")}]`;
+}
+
+function formatSequence(a) {
+  return "(" + a.join(", ") + ")";
+}
+
+// 連分数の各段階を表にする
+function makeSteps(p, q) {
+  const rows = [];
+  let i = 0;
+
+  while (q !== 0n) {
+    let a = p / q;
+    let r = p % q;
+
+    if (r < 0n) {
+      a -= 1n;
+      r += q;
+    }
+
+    rows.push({
+      i,
+      p,
+      q,
+      a,
+      r
+    });
+
+    p = q;
+    q = r;
+    i++;
+  }
+  return rows;
+}
+
+function calculate() {
+  const output = document.getElementById("output");
+
+  try {
+    const data = parseFiniteDecimal(document.getElementById("input").value);
+    const { numerator: p, denominator: q } = data;
+
+    const a = continuedFraction(p, q);
+    const steps = makeSteps(p, q);
+
+    let html = `
+      <div class="card">
+        <h2>結果</h2>
+        <p>
+          入力値:
+          <strong>${escapeHtml(data.original)}</strong>
+        </p>
+        <p>
+          有理数:
+          <span class="mono">${p.toString()} / ${q.toString()}</span>
+        </p>
+
+        <h3>正則連分数表示</h3>
+        <div class="result">${escapeHtml(formatCF(a))}</div>
+
+        <h3>数列表示</h3>
+        <div class="result">${escapeHtml(formatSequence(a))}</div>
+      </div>
+
+      <div class="card">
+        <h2>ユークリッドの互除法</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>i</th>
+              <th>p</th>
+              <th>q</th>
+              <th>floor(p/q)</th>
+              <th>余り</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    for (const row of steps) {
+      html += `
+        <tr>
+          <td>${row.i}</td>
+          <td>${escapeHtml(row.p.toString())}</td>
+          <td>${escapeHtml(row.q.toString())}</td>
+          <td>${escapeHtml(row.a.toString())}</td>
+          <td>${escapeHtml(row.r.toString())}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    output.innerHTML = html;
+
+  } catch (e) {
+    output.innerHTML = `
+      <div class="card error">
+        <strong>エラー:</strong> ${escapeHtml(e.message)}
+      </div>
+    `;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
+}
+
+document.getElementById("calc").addEventListener("click", calculate);
+
+document.getElementById("input").addEventListener("keydown", e => {
+  if (e.key === "Enter") calculate();
+});
+
+calculate();
+</script>
+
+</body>
+</html>
