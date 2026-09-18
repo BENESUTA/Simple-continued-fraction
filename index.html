@@ -110,7 +110,7 @@ function parseFiniteDecimal(str) {
     throw new Error("科学表記（例: 1.23e-4）ではなく、通常の有限小数を入力してください。");
   }
 
-  const m = str.match(/^([+-]?)(\\d+)(?:\\.(\\d*))?$/);
+  const m = str.match(/^([+-]?)(\d+)(?:\.(\d*))?$/);
   if (!m) {
     throw new Error("有限小数として認識できません。例: 3.1415");
   }
